@@ -19,6 +19,8 @@ dependencies:
   awesome_notifications: ^0.10.1
   audioplayers: ^6.5.1
   soundpool: ^2.3.0
+  window_manager: ^0.3.9
+  screen_retriever: ^0.1.9
 
 
 dev_dependencies:

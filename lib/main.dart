@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:window_manager/window_manager.dart';
+import 'package:screen_retriever/screen_retriever.dart'; // ✅ eklendi
 import 'pages/home_page.dart';
 import 'services/note_service.dart';
 import 'theme/app_theme.dart';
@@ -8,10 +10,33 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ✅ Pencere ayarları (masaüstü)
+  await windowManager.ensureInitialized();
+
+  WindowOptions windowOptions = const WindowOptions(
+    size: Size(400, 980),
+    center: false,
+    title: 'Yapışkan Notlar',
+    backgroundColor: Colors.transparent,
+  );
+
+  windowManager.waitUntilReadyToShow(windowOptions, () async {
+    final display = await screenRetriever
+        .getPrimaryDisplay(); // ✅ doğru kullanım
+    final screenSize = display.size;
+
+    await windowManager.setPosition(
+      Offset(screenSize.width - 405, 0), // ✅ sağ üst köşe hizalama
+    );
+
+    await windowManager.show();
+    await windowManager.focus();
+  });
+
   // ✅ Hive veritabanını başlat
   await NoteService.init();
 
-  // ✅ Bildirim sistemi başlat (masaüstü + mobil uyumlu)
+  // ✅ Bildirim sistemi başlat
   await AwesomeNotifications().initialize(null, [
     NotificationChannel(
       channelKey: 'note_reminder',
@@ -21,7 +46,6 @@ Future<void> main() async {
       ledColor: Colors.white,
       importance: NotificationImportance.High,
       playSound: true,
-      soundSource: null, // 🔈 biz AssetSource ile çalıyoruz
     ),
   ]);
 
@@ -30,7 +54,7 @@ Future<void> main() async {
     await AwesomeNotifications().requestPermissionToSendNotifications();
   }
 
-  // 🔊 Bildirim sesi çal (masaüstü + mobil)
+  // 🔊 Bildirim tıklanınca ses çal
   AwesomeNotifications().setListeners(
     onActionReceivedMethod: (action) async {
       try {
@@ -78,7 +102,6 @@ class _AppLoaderState extends State<AppLoader> {
   }
 
   Future<void> _initialize() async {
-    // Küçük gecikme efekti
     await Future.delayed(const Duration(milliseconds: 800));
     setState(() => _ready = true);
   }
