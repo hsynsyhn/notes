@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:awesome_notifications/awesome_notifications.dart';
 import '../models/note_model.dart';
 
 class NoteEditorPage extends StatefulWidget {
@@ -18,9 +16,9 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
   late TextEditingController titleController;
   late TextEditingController contentController;
   late int colorValue;
-  double fontSize = 14;
-  Timer? _autoSaveTimer; // ⏳ Otomatik kaydetme zamanlayıcısı
-  TimeOfDay? reminderTime; // ⏰ Hatırlatma saati
+  double fontSize = 16;
+  Timer? _autoSaveTimer;
+  bool bulletMode = false;
 
   @override
   void initState() {
@@ -28,6 +26,18 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     titleController = TextEditingController(text: widget.note?.title ?? '');
     contentController = TextEditingController(text: widget.note?.content ?? '');
     colorValue = widget.note?.colorValue ?? (widget.defaultColor ?? 0xFFFFF59D);
+
+    // 🔹 Enter tuşuna basıldığında otomatik "• " eklenmesi
+    contentController.addListener(() {
+      final text = contentController.text;
+      if (text.endsWith('\n') && bulletMode) {
+        final newText = '$text• ';
+        contentController.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: newText.length),
+        );
+      }
+    });
   }
 
   // 💾 Otomatik kaydetme
@@ -45,77 +55,19 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     });
   }
 
-  // ⏰ Hatırlatıcı oluştur
-  Future<void> _setReminder() async {
-    final selectedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
+  void _toggleBulletMode() {
+    setState(() => bulletMode = !bulletMode);
+    if (bulletMode) {
+      final current = contentController.text;
+      final selection = contentController.selection;
+      final insertIndex = (selection.start < 0)
+          ? current.length
+          : selection.start;
 
-    if (selectedTime != null) {
-      setState(() {
-        reminderTime = selectedTime;
-      });
-
-      final now = DateTime.now();
-      final reminderDate = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        selectedTime.hour,
-        selectedTime.minute,
-      );
-
-      await AwesomeNotifications().createNotification(
-        content: NotificationContent(
-          id: Random().nextInt(10000),
-          channelKey: 'note_reminder',
-          title: "⏰ Hatırlatma Zamanı!",
-          body: titleController.text.isEmpty
-              ? "Bir notun seni bekliyor."
-              : titleController.text,
-          notificationLayout: NotificationLayout.Default,
-        ),
-        schedule: NotificationCalendar.fromDate(date: reminderDate),
-      );
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Hatırlatıcı ayarlandı: ${selectedTime.format(context)}",
-            style: const TextStyle(color: Colors.white),
-          ),
-          backgroundColor: Colors.black87,
-        ),
-      );
-    }
-  }
-
-  bool bulletMode = false; // üstte zaten var, bu açık kalacak
-
-  void _addBullet() {
-    final current = contentController.text;
-    final selection = contentController.selection;
-
-    // 🛡️ Güvenlik: imleç yoksa sona ekle
-    final insertIndex = (selection.start < 0)
-        ? current.length
-        : selection.start;
-
-    // 🔹 Eğer madde modu kapalıysa aç, ve ilk maddeyi ekle
-    if (!bulletMode) {
-      bulletMode = true;
       final newText = current.replaceRange(insertIndex, insertIndex, "• ");
       contentController.text = newText;
       contentController.selection = TextSelection.fromPosition(
         TextPosition(offset: insertIndex + 2),
-      );
-    } else {
-      // 🔹 Eğer zaten madde modundaysa, yeni satır eklendiğinde otomatik “• ”
-      final newText = current.replaceRange(insertIndex, insertIndex, "\n• ");
-      contentController.text = newText;
-      contentController.selection = TextSelection.fromPosition(
-        TextPosition(offset: insertIndex + 3),
       );
     }
   }
@@ -142,11 +94,6 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.alarm, size: 26),
-            tooltip: "Hatırlatıcı ekle",
-            onPressed: _setReminder,
-          ),
           IconButton(
             icon: const Icon(Icons.check_rounded, size: 26),
             tooltip: "Kaydet",
@@ -196,14 +143,14 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
             Row(
               children: [
                 IconButton(
-                  onPressed: _addBullet,
-                  tooltip: "Madde ekle",
-                  icon: const Icon(
+                  onPressed: _toggleBulletMode,
+                  tooltip: "Madde modu",
+                  icon: Icon(
                     Icons.format_list_bulleted,
-                    color: Colors.black87,
+                    color: bulletMode ? Colors.amber : Colors.black87,
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 const Text(
                   "Yazı boyutu:",
                   style: TextStyle(color: Colors.black87),
@@ -211,10 +158,10 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                 Expanded(
                   child: Slider(
                     value: fontSize,
-                    min: 14,
-                    max: 26,
-                    divisions: 6,
-                    activeColor: Colors.black87,
+                    min: 10,
+                    max: 18,
+                    divisions: 4,
+                    activeColor: const Color.fromARGB(221, 48, 196, 255),
                     label: "${fontSize.toInt()}",
                     onChanged: (val) {
                       setState(() => fontSize = val);
@@ -246,20 +193,6 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                 onChanged: (_) => _scheduleAutoSave(),
               ),
             ),
-
-            // 🔔 Alt kısımda hatırlatma bilgisi
-            if (reminderTime != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Text(
-                  "🔔 Hatırlatma: ${reminderTime!.format(context)}",
-                  style: const TextStyle(
-                    color: Colors.black87,
-                    fontStyle: FontStyle.italic,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
           ],
         ),
       ),

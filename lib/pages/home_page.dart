@@ -1,5 +1,4 @@
 // ignore_for_file: use_build_context_synchronously, duplicate_ignore
-
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -59,36 +58,58 @@ class _HomePageState extends State<HomePage> {
       final now = DateTime.now();
 
       for (final reminder in reminders) {
-        if (reminder.time.isBefore(now) &&
-            now.difference(reminder.time).inMinutes.abs() < 1) {
+        // 🔁 Eğer geçmişte kalmış tekrarlı hatırlatma varsa ileriye al
+        if (reminder.time.isBefore(now) && reminder.repeatType != null) {
+          while (reminder.time.isBefore(now)) {
+            if (reminder.repeatType == 'Haftada bir') {
+              reminder.time = reminder.time.add(const Duration(days: 7));
+            } else if (reminder.repeatType == '2 haftada bir') {
+              reminder.time = reminder.time.add(const Duration(days: 14));
+            } else if (reminder.repeatType == 'Ayda bir') {
+              reminder.time = DateTime(
+                reminder.time.year,
+                reminder.time.month + 1,
+                reminder.time.day,
+                reminder.time.hour,
+                reminder.time.minute,
+              );
+            }
+          }
+          await reminder.save();
+        }
+
+        // 🔔 Hatırlatma zamanı geldi mi kontrol et
+        final difference = reminder.time.difference(now).inSeconds.abs();
+
+        if (difference < 30) {
           debugPrint("⏰ Hatırlatma zamanı geldi: ${reminder.title}");
 
-          await _playAlertSound(); // ✅ yeni ses sistemi
+          await _playAlertSound();
 
-          if (context.mounted) {
-            showDialog(
-              // ignore: use_build_context_synchronously
-              context: context,
-              builder: (_) => AlertDialog(
-                title: const Text(
-                  "🔔 Hatırlatma Zamanı!",
-                  style: TextStyle(fontSize: 16),
-                ),
-                content: Text(reminder.title),
-                actions: [
-                  TextButton(
-                    onPressed: () async {
-                      await _audioPlayer.stop();
-                      Navigator.pop(context);
-                    },
-                    child: const Text("Tamam"),
-                  ),
-                ],
+          if (!context.mounted) return;
+
+          // ✅ Diyaloğu bekle (kullanıcı kapatana kadar)
+          await showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text(
+                "🔔 Hatırlatma Zamanı!",
+                style: TextStyle(fontSize: 16),
               ),
-            );
-          }
+              content: Text(reminder.title),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    await _audioPlayer.stop();
+                    Navigator.pop(context);
+                  },
+                  child: const Text("Tamam"),
+                ),
+              ],
+            ),
+          );
 
-          // 🔁 Tekrarlama varsa sonraki zamanı planla
+          // 🔁 Eğer tekrar edecekse sonraki zamanı planla
           if (reminder.repeatType != null) {
             DateTime nextTime = reminder.time;
             if (reminder.repeatType == 'Haftada bir') {
@@ -104,11 +125,13 @@ class _HomePageState extends State<HomePage> {
                 reminder.time.minute,
               );
             }
+
             reminder.time = nextTime;
             await reminder.save();
           }
 
-          setState(() {});
+          // ✅ Popup kapandıktan sonra ekranı yenile
+          if (mounted) setState(() {});
         }
       }
     });
@@ -144,22 +167,10 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // ➕ Hatırlatma ekle veya düzenle
   Future<void> _showReminderDialog({ReminderModel? existing}) async {
     final titleController = TextEditingController(text: existing?.title ?? '');
     String? repeatType = existing?.repeatType ?? 'Tek seferlik';
-    TimeOfDay initialTime = TimeOfDay.fromDateTime(
-      existing?.time ?? DateTime.now(),
-    );
-
-    // ⏰ sadece dijital mod
-    final selectedTime = await showTimePicker(
-      context: context,
-      initialTime: initialTime,
-      initialEntryMode: TimePickerEntryMode.input, // ✅ dijital görünüme sabit
-    );
-
-    if (selectedTime == null) return;
+    DateTime selectedDateTime = existing?.time ?? DateTime.now();
 
     await showDialog(
       context: context,
@@ -171,16 +182,94 @@ class _HomePageState extends State<HomePage> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // 📝 Başlık alanı
               TextField(
                 controller: titleController,
                 decoration: const InputDecoration(
-                  hintText: "Hatırlatma başlığı",
+                  labelText: "Başlık",
+                  hintText: "Hatırlatma başlığı girin",
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+
+              // 📅 Tarih seçici (🇹🇷 Türkçe takvim)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      "📅 Tarih: ${selectedDateTime.day.toString().padLeft(2, '0')}.${selectedDateTime.month.toString().padLeft(2, '0')}.${selectedDateTime.year}",
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.calendar_today),
+                    onPressed: () async {
+                      final pickedDate = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDateTime,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                        locale: const Locale('tr', 'TR'), // 🇹🇷 Türkçe takvim
+                        helpText: "Tarih Seç", // üst başlık
+                        cancelText: "İptal",
+                        confirmText: "Tamam",
+                      );
+                      if (pickedDate != null) {
+                        setStateDialog(() {
+                          selectedDateTime = DateTime(
+                            pickedDate.year,
+                            pickedDate.month,
+                            pickedDate.day,
+                            selectedDateTime.hour,
+                            selectedDateTime.minute,
+                          );
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+
+              // ⏰ Saat seçici (yalnızca dijital mod)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      "⏰ Saat: ${selectedDateTime.hour.toString().padLeft(2, '0')}:${selectedDateTime.minute.toString().padLeft(2, '0')}",
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.access_time),
+                    onPressed: () async {
+                      final pickedTime = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay.fromDateTime(selectedDateTime),
+                        initialEntryMode:
+                            TimePickerEntryMode.input, // ⏱ sadece dijital
+                        helpText: "Saat Seç",
+                        cancelText: "İptal",
+                        confirmText: "Tamam",
+                      );
+                      if (pickedTime != null) {
+                        setStateDialog(() {
+                          selectedDateTime = DateTime(
+                            selectedDateTime.year,
+                            selectedDateTime.month,
+                            selectedDateTime.day,
+                            pickedTime.hour,
+                            pickedTime.minute,
+                          );
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // 🔁 Tekrarlama seçici
               DropdownButtonFormField<String>(
-                // ignore: deprecated_member_use
-                value: repeatType,
+                initialValue: repeatType,
                 decoration: const InputDecoration(labelText: "Tekrarlama"),
                 items: const [
                   DropdownMenuItem(
@@ -210,20 +299,11 @@ class _HomePageState extends State<HomePage> {
               onPressed: () async {
                 if (titleController.text.trim().isEmpty) return;
 
-                final now = DateTime.now();
-                final date = DateTime(
-                  now.year,
-                  now.month,
-                  now.day,
-                  selectedTime.hour,
-                  selectedTime.minute,
-                );
-
                 if (existing == null) {
                   await NoteService.remindersBox.add(
                     ReminderModel(
                       title: titleController.text,
-                      time: date,
+                      time: selectedDateTime,
                       repeatType: repeatType == 'Tek seferlik'
                           ? null
                           : repeatType,
@@ -232,7 +312,7 @@ class _HomePageState extends State<HomePage> {
                 } else {
                   existing
                     ..title = titleController.text
-                    ..time = date
+                    ..time = selectedDateTime
                     ..repeatType = repeatType == 'Tek seferlik'
                         ? null
                         : repeatType;
@@ -263,20 +343,61 @@ class _HomePageState extends State<HomePage> {
         NoteService.remindersBox.values.toList().cast<ReminderModel>()
           ..sort((a, b) => a.time.compareTo(b.time));
 
+    // 🌅 30 günlük motivasyon sözleri
+    final List<String> motivasyonSozleri = [
+      "💭 Her sabah yeni bir başlangıçtır.",
+      "🌞 Bugün, hayallerini gerçekleştirmeye bir adım daha yaklaş.",
+      "🔥 Küçük adımlar büyük değişimlerin başlangıcıdır.",
+      "💪 Zor günler, seni daha güçlü yapar.",
+      "🌈 Her karanlığın sonunda bir umut ışığı vardır.",
+      "🌿 Başlamak için mükemmel olmayı bekleme, başladığında mükemmel olursun.",
+      "✨ Başarı, pes etmeyenlerin ödülüdür.",
+      "🌻 Her gün yeniden doğ, tıpkı güneş gibi.",
+      "🚀 Hedefin varsa yol her zaman bulunur.",
+      "☕ Bir nefes al, sonra kaldığın yerden devam et.",
+      "💎 Başarısızlık değil, denememek kaybettirir.",
+      "🌟 Hayat bir prova değil, şimdi oyna.",
+      "🕊️ Bugün, dünün pişmanlıklarını bırakma günü.",
+      "💫 En iyi zaman ‘şimdi’.",
+      "🌍 Değişim seninle başlar.",
+      "🔥 Cesaret, korkunun yokluğu değil; ona rağmen ilerlemektir.",
+      "🌺 Kendine inan, yeter.",
+      "⚡ Fırtınalar geçer, gökyüzü hep oradadır.",
+      "🌅 Her gün biraz daha iyi ol.",
+      "💬 Hedefini sessizce gerçekleştir, başarı konuşsun.",
+      "🌸 Bir gülümseme bile günü güzelleştirir.",
+      "🪴 Her gün bir tohum ek, bir umut büyüt.",
+      "🎯 Hedefini unutma, odağını kaybetme.",
+      "💡 Zihnini temizle, enerjini yeniden yükle.",
+      "🧭 Ne kadar uzak olursa olsun, ilk adım bugün atılır.",
+      "⏳ Sabır, büyük işlerin gizli anahtarıdır.",
+      "🌤️ Her gün bir fırsattır, yeter ki fark et.",
+      "🧠 Güçlü olmak bazen sadece devam etmektir.",
+      "🌕 Bugün için minnettar ol.",
+      "❤️ En iyi yatırım kendinedir.",
+    ];
+
+    // 📅 Gün sayısına göre motivasyon sözü seç
+    final int gunIndex = DateTime.now().day % motivasyonSozleri.length;
+    final String bugunkuSoz = motivasyonSozleri[gunIndex];
+
     return Scaffold(
       appBar: AppBar(title: const Text("Notlar"), centerTitle: true),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
+            // 🌞 Günlük motivasyon sözü
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                "💭 Her sabah yeni bir başlangıçtır.",
-                style: TextStyle(
+                bugunkuSoz,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
                   fontStyle: FontStyle.italic,
                   color: Colors.white70,
                   fontSize: 12,
+                  height: 1.4,
                 ),
               ),
             ),
