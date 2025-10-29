@@ -16,7 +16,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable   # ✅ versiyonu sabitlemek yerine stable kullan
+          channel: stable
           flutter-version: "3.35.4"
 
       - name: Flutter doctor
@@ -28,15 +28,15 @@ jobs:
       - name: Build Windows release
         run: flutter build windows --release
 
-      # ✅ Build klasörünü zip'e al (tek parça artifact)
+      # ✅ Doğru dizine geç ve zip oluştur
       - name: Package EXE as ZIP
         run: |
           cd build/windows/x64/runner/Release
-          powershell Compress-Archive * ../../../../../Notlar_Windows.zip
+          powershell Compress-Archive -Path * -DestinationPath ../../../../Notlar_Windows.zip
 
-      # ✅ Artifact olarak yükle
+      # ✅ Artifact yükle (düzeltilmiş path)
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: Notlar_Windows
-          path: build/windows/Notlar_Windows.zip
+          path: build/Notlar_Windows.zip
