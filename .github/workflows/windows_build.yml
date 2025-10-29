@@ -10,25 +10,33 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Setup Flutter
-      uses: subosito/flutter-action@v2
-      with:
-        flutter-version: "3.35.4"
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable   # ✅ versiyonu sabitlemek yerine stable kullan
+          flutter-version: "3.35.4"
 
-    - name: Flutter doctor
-      run: flutter doctor -v
+      - name: Flutter doctor
+        run: flutter doctor -v
 
-    - name: Get dependencies
-      run: flutter pub get
+      - name: Get dependencies
+        run: flutter pub get
 
-    - name: Build Windows release
-      run: flutter build windows --release
+      - name: Build Windows release
+        run: flutter build windows --release
 
-    - name: Upload build artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: NotlarApp-Windows
-        path: build/windows/x64/runner/Release/
+      # ✅ Build klasörünü zip'e al (tek parça artifact)
+      - name: Package EXE as ZIP
+        run: |
+          cd build/windows/x64/runner/Release
+          powershell Compress-Archive * ../../../../../Notlar_Windows.zip
+
+      # ✅ Artifact olarak yükle
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Notlar_Windows
+          path: build/windows/Notlar_Windows.zip
